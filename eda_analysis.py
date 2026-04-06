@@ -8,6 +8,7 @@ Usage:
     python eda_analysis.py
 """
 import os
+import itertools
 import pandas as pd
 import numpy as np
 import matplotlib
@@ -171,6 +172,18 @@ def plot_distributions(df):
     plt.close()
     print("✓ Saved: gpa_by_department.png")
     
+    # Plot 4b: GPA by Department (Violin Plot)
+    plt.figure(figsize=(12, 6))
+    sns.violinplot(data=df, x="department", y="gpa", palette="Set2", inner="box")
+    plt.title("GPA Distribution by Department with Density Shapes", fontsize=14, fontweight="bold")
+    plt.xlabel("Department", fontsize=12)
+    plt.ylabel("GPA", fontsize=12)
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.savefig("output/department_gpa_violin.png", dpi=300)
+    plt.close()
+    print("✓ Saved: department_gpa_violin.png")
+    
     # Plot 5: Scholarship Distribution (Bar Chart)
     plt.figure(figsize=(10, 6))
     scholarship_counts = df["scholarship"].value_counts()
@@ -266,6 +279,37 @@ def plot_correlations(df):
         print(f"  {var1:25s} vs {var2:20s}: {actual_corr:7.3f}")
 
 
+def bootstrap_mean_ci(series, n_bootstraps=10000, ci=0.95, random_state=42):
+    clean = series.dropna().values
+    rng = np.random.RandomState(random_state)
+    boots = rng.choice(clean, size=(n_bootstraps, len(clean)), replace=True)
+    means = boots.mean(axis=1)
+    lower = np.percentile(means, ((1 - ci) / 2) * 100)
+    upper = np.percentile(means, (1 - (1 - ci) / 2) * 100)
+    return lower, upper
+
+
+def compute_power_sample_size(effect_size, alpha=0.05, power=0.8, ratio=1.0):
+    try:
+        from statsmodels.stats.power import TTestIndPower
+    except ImportError:
+        raise ImportError("statsmodels is required for power analysis. Install it via pip install statsmodels")
+    analysis = TTestIndPower()
+    n_required = analysis.solve_power(effect_size=effect_size, alpha=alpha, power=power, ratio=ratio)
+    return int(np.ceil(n_required))
+
+
+def simulate_alpha_rate(n_sims=1000, n1=50, n2=50, alpha=0.05, random_state=42):
+    rng = np.random.RandomState(random_state)
+    p_values = []
+    for _ in range(n_sims):
+        x = rng.normal(loc=0, scale=1, size=n1)
+        y = rng.normal(loc=0, scale=1, size=n2)
+        _, p = stats.ttest_ind(x, y)
+        p_values.append(p)
+    return np.mean(np.array(p_values) < alpha)
+
+
 def run_hypothesis_tests(df):
     """Run statistical tests to validate observed patterns.
 
@@ -332,6 +376,123 @@ def run_hypothesis_tests(df):
     else:
         print(f"  ✗ NOT statistically significant (p ≥ 0.05)")
         print(f"    We fail to reject the null hypothesis.")
+    
+    # Bootstrap confidence intervals for mean GPA by internship status
+    print("\nBootstrap analysis for GPA means by internship status")
+    print("-" * 80)
+    boot_with = bootstrap_mean_ci(gpa_with_internship)
+    boot_without = bootstrap_mean_ci(gpa_without_internship)
+    results["bootstrap_ci"] = {
+        "with_internship": boot_with,
+        "without_internship": boot_without,
+        "confidence_level": 0.95,
+    }
+    print(f"  With internship 95% CI: [{boot_with[0]:.4f}, {boot_with[1]:.4f}]")
+    print(f"  Without internship 95% CI: [{boot_without[0]:.4f}, {boot_without[1]:.4f}]" )
+    print("  Note: bootstrap CI is based on 10,000 resamples.")
+    
+    # Parametric confidence intervals for each internship group mean
+    print("\nParametric confidence interval comparison")
+    print("-" * 80)
+    sem_with = gpa_with_internship.sem()
+    sem_without = gpa_without_internship.sem()
+    tcrit_with = stats.t.ppf(0.975, n1 - 1)
+    tcrit_without = stats.t.ppf(0.975, n2 - 1)
+    param_ci_with = (gpa_with_internship.mean() - tcrit_with * sem_with, gpa_with_internship.mean() + tcrit_with * sem_with)
+    param_ci_without = (gpa_without_internship.mean() - tcrit_without * sem_without, gpa_without_internship.mean() + tcrit_without * sem_without)
+    results["parametric_ci"] = {
+        "with_internship": param_ci_with,
+        "without_internship": param_ci_without,
+        "confidence_level": 0.95,
+    }
+    print(f"  Parametric 95% CI with internship: [{param_ci_with[0]:.4f}, {param_ci_with[1]:.4f}]")
+    print(f"  Parametric 95% CI without internship: [{param_ci_without[0]:.4f}, {param_ci_without[1]:.4f}]")
+
+    # Bootstrap confidence intervals for mean GPA by internship status
+    print("\nBootstrap analysis for GPA means by internship status")
+    print("-" * 80)
+    boot_with = bootstrap_mean_ci(gpa_with_internship)
+    boot_without = bootstrap_mean_ci(gpa_without_internship)
+    results["bootstrap_ci"] = {
+        "with_internship": boot_with,
+        "without_internship": boot_without,
+        "confidence_level": 0.95,
+    }
+    print(f"  Bootstrap 95% CI with internship: [{boot_with[0]:.4f}, {boot_with[1]:.4f}]")
+    print(f"  Bootstrap 95% CI without internship: [{boot_without[0]:.4f}, {boot_without[1]:.4f}]")
+    print("  Note: bootstrap CI is based on 10,000 resamples.")
+
+    # Power analysis for internship GPA difference
+    print("\nPower analysis for detecting internship GPA effect")
+    print("-" * 80)
+    required_n = compute_power_sample_size(abs(cohens_d), alpha=0.05, power=0.8)
+    results["power_analysis"] = {
+        "effect_size": abs(cohens_d),
+        "alpha": 0.05,
+        "power": 0.8,
+        "sample_size_per_group": required_n,
+    }
+    print(f"  Required sample size per group for 80% power: {required_n}")
+    print(f"  Effect size used: {abs(cohens_d):.4f}")
+
+    # Simulation of false positive rate under the null hypothesis
+    print("\nSimulation of false positive rate for independent t-tests")
+    print("-" * 80)
+    false_positive_rate = simulate_alpha_rate(n_sims=1000, n1=50, n2=50, alpha=0.05)
+    results["simulated_alpha"] = {
+        "alpha": 0.05,
+        "false_positive_rate": false_positive_rate,
+        "n_sims": 1000,
+    }
+    print(f"  Simulated false positive rate: {false_positive_rate:.3f}")
+    print(f"  Expected α: 0.05")
+    
+    # ANOVA test: GPA across departments
+    print("\n" + "-" * 80)
+    print("\nHYPOTHESIS TEST 1B: GPA Differences Across Departments")
+    print("-" * 80)
+    department_groups = [group["gpa"].values for _, group in df.groupby("department")]
+    f_stat, p_anova = stats.f_oneway(*department_groups)
+    results["department_anova"] = {"f_stat": f_stat, "p_value": p_anova, "df_between": len(department_groups)-1, "df_within": len(df)-len(department_groups)}
+    print(f"Hypothesis: Average GPA differs across departments")
+    print(f"Test Type: One-way ANOVA")
+    print(f"\nTest Results:")
+    print(f"  F-statistic: {f_stat:.6f}")
+    print(f"  p-value: {p_anova:.6f}")
+    if p_anova < 0.05:
+        print(f"  ✓ STATISTICALLY SIGNIFICANT (p < 0.05)")
+        print(f"    At least one department differs in average GPA.")
+    else:
+        print(f"  ✗ NOT statistically significant (p ≥ 0.05)")
+        print(f"    No strong evidence that departments differ in mean GPA.")
+    
+    # Post-hoc pairwise t-tests with Bonferroni correction
+    posthoc_results = []
+    if p_anova < 0.05:
+        print("\nPost-hoc pairwise comparisons with Bonferroni correction")
+        print("-" * 80)
+        dept_names = sorted(df["department"].unique())
+        comparisons = list(itertools.combinations(dept_names, 2))
+        raw_pvalues = []
+        for dept1, dept2 in comparisons:
+            grp1 = df[df["department"] == dept1]["gpa"]
+            grp2 = df[df["department"] == dept2]["gpa"]
+            t_pair, p_pair = stats.ttest_ind(grp1, grp2)
+            raw_pvalues.append(p_pair)
+            posthoc_results.append({
+                "dept1": dept1,
+                "dept2": dept2,
+                "t_stat": t_pair,
+                "p_value_raw": p_pair,
+            })
+        bonferroni_alpha = 0.05 / len(raw_pvalues)
+        for result in posthoc_results:
+            result["p_value_adj"] = min(result["p_value_raw"] * len(raw_pvalues), 1.0)
+            result["significant"] = result["p_value_adj"] < 0.05
+            print(f"  {result['dept1']} vs {result['dept2']}: t={result['t_stat']:.4f}, raw p={result['p_value_raw']:.4f}, adj p={result['p_value_adj']:.4f}, significant={result['significant']}")
+    else:
+        print("  Skipping post-hoc tests because ANOVA was not significant.")
+    results["posthoc_ttests"] = posthoc_results
     
     # Hypothesis Test 2: Chi-square test of independence
     # H0: Scholarship status is independent of department
@@ -490,7 +651,7 @@ This report presents exploratory data analysis of student performance metrics ac
 - **Departments Ranked by Mean GPA:**
   {dept_gpa_ranking}
 - **Key Observation:** Engineering and Computer Science students show higher average GPAs
-- **See:** `output/gpa_by_department.png`
+- **See:** `output/gpa_by_department.png` and `output/department_gpa_violin.png`
 
 #### Scholarship Distribution
 - **Distribution:**
@@ -552,6 +713,46 @@ The following heatmap visualizes relationships between all numeric variables:
 
 **Practical Significance:**
 {h1_practical}
+
+**Parametric Confidence Intervals:**
+- With internship 95% CI: [{h1_param_ci_with_lower:.4f}, {h1_param_ci_with_upper:.4f}]
+- Without internship 95% CI: [{h1_param_ci_without_lower:.4f}, {h1_param_ci_without_upper:.4f}]
+
+**Bootstrap Confidence Intervals:**
+- With internship 95% CI: [{h1_ci_with_lower:.4f}, {h1_ci_with_upper:.4f}]
+- Without internship 95% CI: [{h1_ci_without_lower:.4f}, {h1_ci_without_upper:.4f}]
+
+**Simulation of False Positive Rate:**
+- Estimated α via simulation: {sim_alpha:.3f} (1000 synthetic null tests)
+- Expected α: 0.05
+
+**Power Analysis:**
+- Required sample size per group for 80% power at α=0.05: {power_n}
+- Effect size used: {h1_effect_size:.4f}
+
+---
+
+### Hypothesis Test 1B: GPA Differences Across Departments
+
+**Research Question:** Does average GPA differ across the five departments?
+
+**Null Hypothesis (H₀):** Mean GPA is equal across departments  
+**Alternative Hypothesis (H₁):** At least one department has a different mean GPA
+
+**Test Used:** One-way ANOVA
+
+**Results:**
+| Metric | Value |
+|--------|-------|
+| F-statistic | {anova_f:.6f} |
+| p-value | {anova_p:.6f} |
+| df between | {anova_df_between} |
+| df within | {anova_df_within} |
+
+**Interpretation:**
+{anova_interpretation}
+
+{anova_posthoc}
 
 ---
 
@@ -691,6 +892,23 @@ All visualizations referenced in this report are saved as PNG files in the `outp
     h1_cohens=test_results["internship_ttest"]["cohens_d"],
     h1_interpretation="✓ **STATISTICALLY SIGNIFICANT** (p < 0.05)\n\nStudents WITH internships have significantly different GPA than students WITHOUT internships." if test_results["internship_ttest"]["p_value"] < 0.05 else "✗ **NOT STATISTICALLY SIGNIFICANT** (p ≥ 0.05)\n\nWe fail to reject the null hypothesis. The observed GPA difference is not statistically significant.",
     h1_practical="The observed difference is " + ("PRACTICALLY MEANINGFUL" if abs(test_results["internship_ttest"]["cohens_d"]) >= 0.5 else "relatively small in practical terms") + f" with effect size Cohen's d = {test_results['internship_ttest']['cohens_d']:.4f}",
+    h1_param_ci_with_lower=test_results["parametric_ci"]["with_internship"][0],
+    h1_param_ci_with_upper=test_results["parametric_ci"]["with_internship"][1],
+    h1_param_ci_without_lower=test_results["parametric_ci"]["without_internship"][0],
+    h1_param_ci_without_upper=test_results["parametric_ci"]["without_internship"][1],
+    h1_ci_with_lower=test_results["bootstrap_ci"]["with_internship"][0],
+    h1_ci_with_upper=test_results["bootstrap_ci"]["with_internship"][1],
+    h1_ci_without_lower=test_results["bootstrap_ci"]["without_internship"][0],
+    h1_ci_without_upper=test_results["bootstrap_ci"]["without_internship"][1],
+    sim_alpha=test_results["simulated_alpha"]["false_positive_rate"],
+    power_n=test_results["power_analysis"]["sample_size_per_group"],
+    h1_effect_size=test_results["power_analysis"]["effect_size"],
+    anova_f=test_results["department_anova"]["f_stat"],
+    anova_p=test_results["department_anova"]["p_value"],
+    anova_df_between=test_results["department_anova"]["df_between"],
+    anova_df_within=test_results["department_anova"]["df_within"],
+    anova_interpretation="✓ STATISTICALLY SIGNIFICANT (p < 0.05) — at least one department differs in average GPA." if test_results["department_anova"]["p_value"] < 0.05 else "✗ NOT statistically significant (p ≥ 0.05) — no strong evidence of department-level GPA differences.",
+    anova_posthoc="\n".join([f"- {item['dept1']} vs {item['dept2']}: adjusted p = {item['p_value_adj']:.4f}, significant={item['significant']}" for item in test_results["posthoc_ttests"]]) if test_results["posthoc_ttests"] else "Post-hoc pairwise tests were not required or not significant.",
     # Hypothesis 2 values
     h2_chi2=test_results["scholarship_chi2"]["chi2_stat"],
     h2_pvalue=test_results["scholarship_chi2"]["p_value"],

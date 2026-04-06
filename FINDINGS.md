@@ -68,7 +68,7 @@ This report presents exploratory data analysis of student performance metrics ac
     4. Computer Science: 2.765
     5. Business: 2.749
 - **Key Observation:** Engineering and Computer Science students show higher average GPAs
-- **See:** `output/gpa_by_department.png`
+- **See:** `output/gpa_by_department.png` and `output/department_gpa_violin.png`
 
 #### Scholarship Distribution
 - **Distribution:**
@@ -136,6 +136,46 @@ Students WITH internships have significantly different GPA than students WITHOUT
 
 **Practical Significance:**
 The observed difference is PRACTICALLY MEANINGFUL with effect size Cohen's d = 0.6898
+
+**Parametric Confidence Intervals:**
+- With internship 95% CI: [2.9503, 3.0154]
+- Without internship 95% CI: [2.6792, 2.7220]
+
+**Bootstrap Confidence Intervals:**
+- With internship 95% CI: [2.9503, 3.0148]
+- Without internship 95% CI: [2.6794, 2.7226]
+
+**Simulation of False Positive Rate:**
+- Estimated α via simulation: 0.051 (1000 synthetic null tests)
+- Expected α: 0.05
+
+**Power Analysis:**
+- Required sample size per group for 80% power at α=0.05: 34
+- Effect size used: 0.6898
+
+---
+
+### Hypothesis Test 1B: GPA Differences Across Departments
+
+**Research Question:** Does average GPA differ across the five departments?
+
+**Null Hypothesis (H₀):** Mean GPA is equal across departments  
+**Alternative Hypothesis (H₁):** At least one department has a different mean GPA
+
+**Test Used:** One-way ANOVA
+
+**Results:**
+| Metric | Value |
+|--------|-------|
+| F-statistic | 0.667133 |
+| p-value | 0.614811 |
+| df between | 4 |
+| df within | 1995 |
+
+**Interpretation:**
+✗ NOT statistically significant (p ≥ 0.05) — no strong evidence of department-level GPA differences.
+
+Post-hoc pairwise tests were not required or not significant.
 
 ---
 
@@ -220,5 +260,5 @@ All visualizations referenced in this report are saved as PNG files in the `outp
 
 ---
 
-*Report Generated:* 2026-04-06 12:23:39  
+*Report Generated:* 2026-04-06 13:05:12  
 *Analysis Tool:* Python EDA Pipeline (pandas, scipy, matplotlib, seaborn)
